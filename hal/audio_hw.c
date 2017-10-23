@@ -330,6 +330,7 @@ enum exTfa98xx_Audio_Mode
 typedef enum exTfa98xx_Audio_Mode exTfa98xx_audio_mode_t;
 
 static exTfa98xx_audio_mode_t tfa_EQMode = Audio_Mode_Music_Normal;
+static int tfa_loaded = 0;
 static int tfa_calStatus = 0;
 static int tfa_open = 0;
 static int tfa_thread_on = 0;
@@ -352,33 +353,28 @@ static tfa9890_device_t tfa9890_dev;
 
 void *tfa98xx_on_thread()
 {
-    int tfa_ret = 0;
-
     while (1) {
-        ALOGD("%s: tfa_thread_on=%d", __func__, tfa_thread_on);
-
         if (tfa_thread_on) {
             if (tfa_calStatus == 0) {
+                int ret = 0;
+
                 ALOGD("%s: calibration start", __func__);
                 usleep(40*1000);
-                tfa_ret = tfa9890_dev.exTfa98xx_calibration();
-                if (tfa_ret == 0) {
+                
+                ret = tfa9890_dev.exTfa98xx_calibration();
+                if (ret == 0) {
                     ALOGD("%s: calibration ok", __func__);
                     tfa_calStatus = 1;
                     tfa_open = 1;
                 } else {
-                    ALOGE("%s: calibration failed, tfa_ret=%d", __func__, tfa_ret);
+                    ALOGE("%s: calibration failed, ret=%d", __func__, ret);
                     tfa9890_dev.exTfa98xx_speakeroff();
-                    ALOGD("%s: speaker amp off", __func__);
                 }
             } else if (tfa_calStatus == 1) {
                 if (tfa_open == 0) {
                     usleep(40*1000);
-                    ALOGD("%s: speaker amp on, set tfa_EQMode=%d", __func__, tfa_EQMode);
                     tfa9890_dev.exTfa98xx_speakeron(tfa_EQMode);
                     tfa_open = 1;
-                } else {
-                    ALOGD("%s: open abnormal, tfa_open=%d", __func__, tfa_open);
                 }
             }
             tfa_thread_on = 0;
@@ -707,18 +703,22 @@ int pcm_ioctl(struct pcm *pcm, int request, ...)
 #ifdef ENABLE_TFA98XX
 void controlSpeakerAmp(bool enable)
 {
+    if (tfa_loaded == 0) {
+        return;
+    }
+    
     if (enable) {
+        ALOGD("%s: enable speaker amplifier, tfa_open=%d, tfa_thread_on=%d", __func__, tfa_open, tfa_thread_on);
         if (tfa_open == 0 && tfa_thread_on == 0) {
             tfa_thread_on = 1;
-            ALOGD("%s: tfa_thread_on=%d", __func__,  tfa_thread_on);
             pthread_mutex_lock(&tfa_mutex);
             pthread_cond_signal(&mycond);
             pthread_mutex_unlock(&tfa_mutex);
         }
     } else {
+        ALOGD("%s: disable speaker amplifier, tfa_open=%d, tfa_thread_on=%d", __func__, tfa_open, tfa_thread_on);
         if (tfa_open == 1 && tfa_calStatus == 1) {
            tfa9890_dev.exTfa98xx_speakeroff();
-           ALOGD("%s: speaker amp off", __func__);
            tfa_open = 0;
            usleep(20*1000);
         }
@@ -778,7 +778,6 @@ int enable_audio_route(struct audio_device *adev,
     }
 
     if (tfa_count > 0) {
-        ALOGD("%s: controlSpeakerAmp", __func__);
         controlSpeakerAmp(true);
     }
 #endif // ENABLE_TFA98XX
@@ -819,7 +818,6 @@ int disable_audio_route(struct audio_device *adev,
 
     if (tfa_count <= 0) {
         tfa_count = 0;
-        ALOGD("%s: controlSpeakerAmp", __func__);
         controlSpeakerAmp(false);
     }
 #endif // ENABLE_TFA98XX
@@ -3572,7 +3570,7 @@ static int in_remove_audio_effect(const struct audio_stream *stream,
 #ifdef ENABLE_TFA98XX
 static int pcm_open_device(struct stream_out *out)
 {
-    const char *mixer_ctl_name = "TERT_MI2S_RX Audio Mixer MultiMedia1";
+    const char *mixer_ctl_name = TFA98XX_CTL_NAME;
     struct mixer_ctl *ctl;
     int ret = 0;
 
@@ -3631,7 +3629,7 @@ static int pcm_open_device(struct stream_out *out)
 
     ret = tfa9890_dev.exTfa98xx_calibration();
 
-    if(ret == 0) {
+    if (ret == 0) {
         ALOGD("%s: exTfa98xx_calibration success", __func__);
         tfa_calStatus = 1;
     } else {
@@ -4076,7 +4074,7 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     out->af_period_multiplier  = out->realtime ? af_period_multiplier : 1;
 
 #ifdef ENABLE_TFA98XX
-    if (tfa_calStatus == 0) {
+    if (tfa_calStatus == 0 && tfa_loaded == 1) {
         ret = pcm_open_device(out);
         if (ret == 0)
             ALOGD("%s: pcm_open_device open success", __func__);
@@ -5015,23 +5013,34 @@ static int adev_open(const hw_module_t *module, const char *name,
     audio_extn_perf_lock_init();
 
 #ifdef ENABLE_TFA98XX
-    ALOGD("%s: tfa98xx: initailize", __func__);
-
-    tfa9890_dev.lib_ptr = dlopen("libtfa9890.so", RTLD_NOW);
-    tfa9890_dev.exTfa98xx_calibration = (exTfa98xx_calibration_t)dlsym(tfa9890_dev.lib_ptr, "exTfa98xx_calibration");
-    tfa9890_dev.exTfa98xx_speakeron = (exTfa98xx_speakeron_t)dlsym(tfa9890_dev.lib_ptr, "exTfa98xx_speakeron");
-    tfa9890_dev.exTfa98xx_speakeroff = (exTfa98xx_speakeroff_t)dlsym(tfa9890_dev.lib_ptr, "exTfa98xx_speakeroff");
-
-    pthread_t tfa98xx_thread;
-    int tfa_ret = 0;
-    tfa_count = 0;
-    pthread_mutex_lock(&tfa_mutex);
-    ALOGD("%s: tfa98xx: create tfa open thread", __func__);
-    tfa_ret = pthread_create(&tfa98xx_thread, NULL, tfa98xx_on_thread, NULL);
-    if (tfa_ret != 0) {
-        ALOGD("%s: tfa98xx: pthread_create failed", __func__);
+    tfa_loaded = 0;
+    tfa9890_dev.lib_ptr = dlopen(TFA98XX_LIB_NAME, RTLD_NOW);
+    if (tfa9890_dev.lib_ptr != NULL) {
+        tfa9890_dev.exTfa98xx_calibration = (exTfa98xx_calibration_t)dlsym(tfa9890_dev.lib_ptr, TFA98XX_FUNC_CALIBRATION);
+        tfa9890_dev.exTfa98xx_speakeron = (exTfa98xx_speakeron_t)dlsym(tfa9890_dev.lib_ptr, TFA98XX_FUNC_SPEAKERON);
+        tfa9890_dev.exTfa98xx_speakeroff = (exTfa98xx_speakeroff_t)dlsym(tfa9890_dev.lib_ptr, TFA98XX_FUNC_SPEAKEROFF);
+    } else {
+        ALOGE("%s: failed to load tfa98xx library %s", __func__, TFA98XX_LIB_NAME);
     }
-    pthread_mutex_unlock(&tfa_mutex);
+
+    if (tfa9890_dev.exTfa98xx_calibration != NULL && tfa9890_dev.exTfa98xx_speakeron != NULL && tfa9890_dev.exTfa98xx_speakeroff != NULL) {
+        tfa_loaded = 1;
+    }
+    
+    if (tfa_loaded == 1) {
+        ALOGD("%s: tfa98xx: initailize", __func__);
+
+        pthread_t tfa98xx_thread;
+        int tfa_ret = 0;
+        tfa_count = 0;
+        pthread_mutex_lock(&tfa_mutex);
+        ALOGD("%s: tfa98xx: create tfa open thread", __func__);
+        tfa_ret = pthread_create(&tfa98xx_thread, NULL, tfa98xx_on_thread, NULL);
+        if (tfa_ret != 0) {
+            ALOGE("%s: tfa98xx: pthread_create failed", __func__);
+        }
+        pthread_mutex_unlock(&tfa_mutex);
+    }
 #endif // ENABLE_TFA98XX
 
     ALOGV("%s: exit", __func__);
