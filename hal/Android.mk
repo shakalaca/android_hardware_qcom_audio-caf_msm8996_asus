@@ -1,11 +1,51 @@
+ifeq ($(strip $(BOARD_USES_ALSA_AUDIO)),true)
+
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
 LOCAL_ARM_MODE := arm
-AUDIO_PLATFORM := msm8974
-MULTIPLE_HW_VARIANTS_ENABLED := true
-LOCAL_CFLAGS := -DPLATFORM_MSM8996
+
+AUDIO_PLATFORM := $(TARGET_BOARD_PLATFORM)
+
+ifneq ($(filter msm8974 msm8226 msm8610 apq8084 msm8994 msm8992 msm8996 msmcobalt,$(TARGET_BOARD_PLATFORM)),)
+  # B-family platform uses msm8974 code base
+  AUDIO_PLATFORM = msm8974
+  MULTIPLE_HW_VARIANTS_ENABLED := true
+ifneq ($(filter msm8610,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8610
+endif
+ifneq ($(filter msm8226,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8x26
+endif
+ifneq ($(filter apq8084,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_APQ8084
+endif
+ifneq ($(filter msm8994,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8994
+endif
+ifneq ($(filter msm8992,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8994
+endif
+ifneq ($(filter msm8996,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8996
+endif
+ifneq ($(filter msmcobalt,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSMCOBALT
+endif
+endif
+
+ifneq ($(filter msm8916 msm8909 msm8952 msm8937 thorium msm8953 msmgold msmfalcon,$(TARGET_BOARD_PLATFORM)),)
+  AUDIO_PLATFORM = msm8916
+  MULTIPLE_HW_VARIANTS_ENABLED := true
+  LOCAL_CFLAGS := -DPLATFORM_MSM8916
+ifneq ($(filter msm8909,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSM8909
+endif
+ifneq ($(filter msmfalcon,$(TARGET_BOARD_PLATFORM)),)
+  LOCAL_CFLAGS := -DPLATFORM_MSMFALCON
+endif
+endif
 
 LOCAL_SRC_FILES := \
 	audio_hw.c \
@@ -292,10 +332,12 @@ LOCAL_CLANG_CFLAGS += -Wno-unused-variable -Wno-unused-function -Wno-missing-fie
 LOCAL_COPY_HEADERS_TO   := mm-audio
 LOCAL_COPY_HEADERS      := audio_extn/audio_defs.h
 
-LOCAL_MODULE := audio.primary.msm8996
+LOCAL_MODULE := audio.primary.$(TARGET_BOARD_PLATFORM)
 
 LOCAL_MODULE_RELATIVE_PATH := hw
 
 LOCAL_MODULE_TAGS := optional
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif
