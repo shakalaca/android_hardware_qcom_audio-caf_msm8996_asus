@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  * Not a contribution.
  *
  * Copyright (C) 2013 The Android Open Source Project
@@ -257,7 +257,7 @@ void *platform_init(struct audio_device *adev)
     my_data->fluence_in_voice_rec = false;
     my_data->fluence_type = FLUENCE_NONE;
 
-    property_get("ro.qc.sdk.audio.fluencetype", value, "");
+    property_get("ro.vendor.audio.sdk.fluencetype", value, "");
     if (!strncmp("fluencepro", value, sizeof("fluencepro"))) {
         my_data->fluence_type = FLUENCE_QUAD_MIC;
     } else if (!strncmp("fluence", value, sizeof("fluence"))) {
@@ -267,17 +267,17 @@ void *platform_init(struct audio_device *adev)
     }
 
     if (my_data->fluence_type != FLUENCE_NONE) {
-        property_get("persist.audio.fluence.voicecall",value,"");
+        property_get("persist.vendor.audio.fluence.voicecall",value,"");
         if (!strncmp("true", value, sizeof("true"))) {
             my_data->fluence_in_voice_call = true;
         }
 
-        property_get("persist.audio.fluence.voicerec",value,"");
+        property_get("persist.vendor.audio.fluence.voicerec",value,"");
         if (!strncmp("true", value, sizeof("true"))) {
             my_data->fluence_in_voice_rec = true;
         }
 
-        property_get("persist.audio.fluence.speaker",value,"");
+        property_get("persist.vendor.audio.fluence.speaker",value,"");
         if (!strncmp("true", value, sizeof("true"))) {
             my_data->fluence_in_spkr_mode = true;
         }
@@ -667,6 +667,11 @@ int platform_set_device_mute(void *platform __unused, bool state __unused, char 
     return -ENOSYS;
 }
 
+int platform_get_ext_disp_type(void *platform)
+{
+    return EXT_DISPLAY_TYPE_HDMI;
+}
+
 snd_device_t platform_get_output_snd_device(void *platform, audio_devices_t devices)
 {
     struct platform_data *my_data = (struct platform_data *)platform;
@@ -1034,6 +1039,12 @@ int platform_stop_incall_music_usecase(void *platform __unused)
     return -ENOSYS;
 }
 
+unsigned char* platform_get_license(void *platform, int *size)
+{
+    ALOGE("%s: Not implemented", __func__);
+    return NULL;
+}
+
 /* Delay in Us */
 int64_t platform_render_latency(audio_usecase_t usecase)
 {
@@ -1093,6 +1104,11 @@ int platform_set_snd_device_backend(snd_device_t device __unused,
     return -ENOSYS;
 }
 
+int platform_get_snd_device_backend_index(snd_device_t device)
+{
+    return -ENOSYS;
+}
+
 bool platform_sound_trigger_device_needs_event(snd_device_t snd_device __unused)
 {
     return false;
@@ -1132,7 +1148,8 @@ int platform_set_channel_map(void *platform __unused, int ch_count __unused,
 
 int platform_set_stream_channel_map(void *platform __unused,
                                     audio_channel_mask_t channel_mask __unused,
-                                    int snd_id __unused)
+                                    int snd_id __unused
+                                    uint8_t *input_channel_map __unused)
 {
     return -ENOSYS;
 }
@@ -1224,21 +1241,69 @@ int platform_get_spkr_prot_snd_device(snd_device_t snd_device __unused)
     return -ENOSYS;
 }
 
+int platform_get_vi_feedback_snd_device(snd_device_t snd_device __unused)
+{
+    return -ENOSYS;
+}
+
 int platform_spkr_prot_is_wsa_analog_mode(void *adev __unused)
 {
     return 0;
-bool platform_can_split_snd_device(void *platform __unused,
-                                   snd_device_t in_snd_device __unused,
-                                   int *num_devices __unused,
-                                   snd_device_t *out_snd_devices __unused)
+
+}
+
+int platform_can_split_snd_device(snd_device_t in_snd_device __unused,
+                                  int *num_devices __unused,
+                                  snd_device_t *out_snd_devices __unused)
 {
-    return false;
+    return -ENOSYS;
 }
 
 bool platform_check_backends_match(snd_device_t snd_device1 __unused,
                                    snd_device_t snd_device2 __unused)
 {
-    return true;
+    return -ENOSYS;
+}
+
+int platform_send_audio_cal(void* platform __unused,
+        int acdb_dev_id __unused, int acdb_device_type __unused,
+        int app_type __unused, int topology_id __unused,
+        int sample_rate __unused, uint32_t module_id,
+        uint32_t param_id, void* data __unused,
+        int length __unused, bool persist __unused)
+{
+    return -ENOSYS;
+}
+
+int platform_get_audio_cal(void* platform __unused,
+        int acdb_dev_id __unused, int acdb_device_type __unused,
+        int app_type __unused, int topology_id __unused,
+        int sample_rate __unused, uint32_t module_id,
+        uint32_t param_id, void* data __unused,
+        int* length __unused, bool persist __unused)
+{
+    return -ENOSYS;
+}
+
+int platform_store_audio_cal(void* platform __unused,
+        int acdb_dev_id __unused, int acdb_device_type __unused,
+        int app_type __unused, int topology_id __unused,
+        int sample_rate __unused,  uint32_t module_id,
+        uint32_t param_id, void* data __unused,
+        int length __unused)
+{
+     return -ENOSYS;
+}
+
+
+int platform_retrieve_audio_cal(void* platform __unused,
+        int acdb_dev_id __unused, int acdb_device_type __unused,
+        int app_type __unused, int topology_id __unused,
+        int sample_rate __unused, uint32_t module_id,
+        uint32_t param_id, void* data __unused,
+        int* length __unused)
+{
+    return -ENOSYS;
 }
 
 int platform_set_sidetone(struct audio_device *adev,
@@ -1261,5 +1326,51 @@ int platform_set_sidetone(struct audio_device *adev,
         else
             audio_route_reset_and_update_path(adev->audio_route, str);
     }
+    return 0;
+}
+
+void platform_update_aanc_path(struct audio_device *adev __unused,
+                               snd_device_t out_snd_device __unused,
+                               bool enable __unused,
+                               char *str __unused)
+{
+    return;
+}
+
+bool platform_check_codec_dsd_support(void *platform __unused)
+{
+    return false;
+}
+
+int platform_get_backend_index(snd_device_t snd_device __unused);
+{
+    return 0;
+}
+
+bool platform_check_codec_asrc_support(void *platform __unused)
+{
+    return false;
+}
+
+bool platform_add_gain_level_mapping(struct amp_db_and_gain_table *tbl_entry __unused)
+{
+    return false;
+}
+
+int platform_get_gain_level_mapping(struct amp_db_and_gain_table *mapping_tbl __unused,
+                                    int table_size __unused)
+{
+    return 0;
+}
+
+int platform_get_meta_info_key_from_list(void *platform __unused,
+                                         char *mod_name __unused)
+{
+    return 0;
+}
+
+int platform_set_acdb_metainfo_key(void *platform __unused, char *name __unused,
+                                   int key __unused)
+{
     return 0;
 }

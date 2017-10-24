@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  * Not a contribution.
  *
  * Copyright (C) 2013 The Android Open Source Project
@@ -36,6 +36,12 @@
 #include "platform.h"
 #include "voice_extn.h"
 
+#ifdef DYNAMIC_LOG_ENABLED
+#include <log_xml_parser.h>
+#define LOG_MASK HAL_MOD_FILE_COMPR_VOIP
+#include <log_utils.h>
+#endif
+
 #define COMPRESS_VOIP_IO_BUF_SIZE_NB 320
 #define COMPRESS_VOIP_IO_BUF_SIZE_WB 640
 #define COMPRESS_VOIP_IO_BUF_SIZE_SWB 1280
@@ -47,6 +53,7 @@ struct pcm_config pcm_config_voip_nb = {
     .period_size = COMPRESS_VOIP_IO_BUF_SIZE_NB/2,
     .period_count = 10,
     .format = PCM_FORMAT_S16_LE,
+    .stop_threshold = INT_MAX,
 };
 
 struct pcm_config pcm_config_voip_wb = {
@@ -55,6 +62,7 @@ struct pcm_config pcm_config_voip_wb = {
     .period_size = COMPRESS_VOIP_IO_BUF_SIZE_WB/2,
     .period_count = 10,
     .format = PCM_FORMAT_S16_LE,
+    .stop_threshold = INT_MAX,
 };
 
 struct pcm_config pcm_config_voip_swb = {
@@ -63,6 +71,7 @@ struct pcm_config pcm_config_voip_swb = {
     .period_size = COMPRESS_VOIP_IO_BUF_SIZE_SWB/2,
     .period_count = 10,
     .format = PCM_FORMAT_S16_LE,
+    .stop_threshold = INT_MAX,
 };
 
 struct pcm_config pcm_config_voip_fb = {
@@ -71,6 +80,7 @@ struct pcm_config pcm_config_voip_fb = {
     .period_size = COMPRESS_VOIP_IO_BUF_SIZE_FB/2,
     .period_count = 10,
     .format = PCM_FORMAT_S16_LE,
+    .stop_threshold = INT_MAX,
 };
 
 struct voip_data {
@@ -284,9 +294,14 @@ static int voip_stop_call(struct audio_device *adev)
             uc_info = node_to_item(node, struct audio_usecase, list);
             select_devices(adev, uc_info->id);
         }
-    } else
-        ALOGV("%s: NO-OP because out_stream_count=%d, in_stream_count=%d",
+    } else {
+        ALOGV("%s: unexpected because out_stream_count=%d, in_stream_count=%d",
                __func__, voip_data.out_stream_count, voip_data.in_stream_count);
+        uc_info = get_usecase_from_list(adev, USECASE_COMPRESS_VOIP_CALL);
+        if (uc_info && !voip_data.out_stream_count)
+            uc_info->stream.out = adev->primary_output;
+        ret = -EINVAL;
+    }
 
     ALOGV("%s: exit: status(%d)", __func__, ret);
     return ret;
@@ -324,6 +339,13 @@ static int voip_start_call(struct audio_device *adev,
         list_add_tail(&adev->usecase_list, &uc_info->list);
 
         select_devices(adev, USECASE_COMPRESS_VOIP_CALL);
+
+        if (uc_info->in_snd_device == SND_DEVICE_NONE &&
+            uc_info->out_snd_device == SND_DEVICE_NONE) {
+            ALOGD("No valid input output device return");
+            ret = -EIO;
+            goto error_start_voip;
+        }
 
         pcm_dev_rx_id = platform_get_pcm_device_id(uc_info->id, PCM_PLAYBACK);
         pcm_dev_tx_id = platform_get_pcm_device_id(uc_info->id, PCM_CAPTURE);
@@ -516,14 +538,22 @@ int voice_extn_compress_voip_start_output_stream(struct stream_out *out)
     int ret = 0;
     struct audio_device *adev = out->dev;
     struct audio_usecase *uc_info;
-    int snd_card_status = get_snd_card_state(adev);
 
     ALOGD("%s: enter", __func__);
 
-    if (SND_CARD_STATE_OFFLINE == snd_card_status) {
+    if (CARD_STATUS_OFFLINE == out->card_status ||
+        CARD_STATUS_OFFLINE == adev->card_status) {
         ret = -ENETRESET;
         ALOGE("%s: sound card is not active/SSR returning error %d ", __func__, ret);
         goto error;
+    }
+
+    if (out->devices & AUDIO_DEVICE_OUT_ALL_SCO) {
+         if (!adev->bt_sco_on) {
+             ALOGE("%s: SCO profile is not ready, return error", __func__);
+             ret = -EAGAIN;
+             goto error;
+         }
     }
 
     if (!voip_data.out_stream_count)
@@ -550,13 +580,19 @@ int voice_extn_compress_voip_start_input_stream(struct stream_in *in)
 {
     int ret = 0;
     struct audio_device *adev = in->dev;
-    int snd_card_status = get_snd_card_state(adev);
 
     ALOGD("%s: enter", __func__);
 
-    if (SND_CARD_STATE_OFFLINE == snd_card_status) {
+    if (CARD_STATUS_OFFLINE == in->card_status ||
+        CARD_STATUS_OFFLINE == adev->card_status) {
         ret = -ENETRESET;
         ALOGE("%s: sound card is not active/SSR returning error %d ", __func__, ret);
+        goto error;
+    }
+
+    if (audio_is_bluetooth_sco_device(in->device) && !adev->bt_sco_on) {
+        ret = -EIO;
+        ALOGE("%s SCO is not ready return error %d", __func__,ret);
         goto error;
     }
 
@@ -626,9 +662,9 @@ int voice_extn_compress_voip_close_input_stream(struct audio_stream *stream)
     ALOGD("%s: enter", __func__);
 
     if(voip_data.in_stream_count > 0) {
-       adev->active_input = NULL;
        voip_data.in_stream_count--;
        status = voip_stop_call(adev);
+       adev->active_input = get_next_active_input(adev);
        in->pcm = NULL;
     }
 
@@ -714,7 +750,7 @@ bool voice_extn_compress_voip_pcm_prop_check()
 {
     char prop_value[PROPERTY_VALUE_MAX] = {0};
 
-    property_get("use.voice.path.for.pcm.voip", prop_value, "0");
+    property_get("vendor.voice.path.for.pcm.voip", prop_value, "0");
     if (!strncmp("true", prop_value, sizeof("true")))
     {
         ALOGD("%s: VoIP PCM property is enabled", __func__);

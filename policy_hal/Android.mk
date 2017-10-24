@@ -26,7 +26,8 @@ LOCAL_C_INCLUDES := $(TOPDIR)frameworks/av/services \
                     $(TOPDIR)frameworks/av/services/audiopolicy/engine/interface \
                     $(TOPDIR)frameworks/av/services/audiopolicy \
                     $(TOPDIR)frameworks/av/services/audiopolicy/common/managerdefinitions/include \
-                    $(call include-path-for, avextension)
+                    $(call include-path-for, avextension) \
+                    $(TOPDIR)system/core/base/include
 
 
 LOCAL_SHARED_LIBRARIES := \
@@ -63,14 +64,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FORMATS)),true)
     LOCAL_CFLAGS += -DAUDIO_EXTN_FORMATS_ENABLED
 endif
 
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_WMA_OFFLOAD)),true)
-    LOCAL_CFLAGS += -DWMA_OFFLOAD_ENABLED
-endif
-
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_APE_OFFLOAD)),true)
-    LOCAL_CFLAGS += -DAPE_OFFLOAD_ENABLED
-endif
-
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_AAC_ADTS_OFFLOAD)),true)
     LOCAL_CFLAGS += -DAAC_ADTS_OFFLOAD_ENABLED
 endif
@@ -94,6 +87,10 @@ endif
 
 ifeq ($(USE_XML_AUDIO_POLICY_CONF), 1)
 LOCAL_CFLAGS += -DUSE_XML_AUDIO_POLICY_CONF
+endif
+
+ifeq ($(strip $($AUDIO_FEATURE_ENABLED_COMPRESS_VOIP)),true)
+    LOCAL_CFLAGS += -DCOMPRESS_VOIP_ENABLED
 endif
 
 LOCAL_MODULE := libaudiopolicymanager

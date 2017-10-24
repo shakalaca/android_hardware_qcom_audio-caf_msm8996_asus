@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, 2016-2017 The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -42,6 +42,12 @@
 #include <dlfcn.h>
 #include <cutils/properties.h>
 #include "audio_extn.h"
+
+#ifdef DYNAMIC_LOG_ENABLED
+#include <log_xml_parser.h>
+#define LOG_MASK HAL_MOD_FILE_DEV_ARBI
+#include <log_utils.h>
+#endif
 
 #ifdef DEV_ARBI_ENABLED
 
@@ -131,6 +137,7 @@ static audio_devices_t get_audio_device(snd_device_t snd_device)
         {SND_DEVICE_OUT_VOICE_HANDSET, AUDIO_DEVICE_OUT_EARPIECE},
         {SND_DEVICE_OUT_SPEAKER, AUDIO_DEVICE_OUT_SPEAKER},
         {SND_DEVICE_OUT_VOICE_SPEAKER, AUDIO_DEVICE_OUT_SPEAKER},
+        {SND_DEVICE_OUT_VOICE_SPEAKER_2, AUDIO_DEVICE_OUT_SPEAKER},
         {SND_DEVICE_OUT_HEADPHONES, AUDIO_DEVICE_OUT_WIRED_HEADPHONE},
         {SND_DEVICE_OUT_VOICE_HEADPHONES, AUDIO_DEVICE_OUT_WIRED_HEADPHONE},
         {SND_DEVICE_OUT_SPEAKER_AND_HEADPHONES,

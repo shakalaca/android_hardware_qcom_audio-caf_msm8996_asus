@@ -179,7 +179,10 @@ int thread_status;
 
 #define MIXER_CARD 0
 #define SOUND_CARD 0
+
+#ifndef CAPTURE_DEVICE
 #define CAPTURE_DEVICE 8
+#endif
 
 /* Proxy port supports only MMAP read and those fixed parameters*/
 #define AUDIO_CAPTURE_CHANNEL_COUNT 2
@@ -447,7 +450,7 @@ void *capture_thread_loop(void *arg)
 
 __attribute__ ((visibility ("default")))
 int visualizer_hal_start_output(audio_io_handle_t output, int pcm_id) {
-    int ret;
+    int ret = 0;
     struct listnode *node;
 
     ALOGV("%s output %d pcm_id %d", __func__, output, pcm_id);
@@ -498,7 +501,7 @@ exit:
 
 __attribute__ ((visibility ("default")))
 int visualizer_hal_stop_output(audio_io_handle_t output, int pcm_id) {
-    int ret;
+    int ret = 0;
     struct listnode *node;
     struct listnode *fx_node;
     output_context_t *out_ctxt;
@@ -556,7 +559,6 @@ int set_config(effect_context_t *context, effect_config_t *config)
     if (config->inputCfg.samplingRate != config->outputCfg.samplingRate) return -EINVAL;
     if (config->inputCfg.channels != config->outputCfg.channels) return -EINVAL;
     if (config->inputCfg.format != config->outputCfg.format) return -EINVAL;
-    if (config->inputCfg.channels != AUDIO_CHANNEL_OUT_STEREO) return -EINVAL;
     if (config->outputCfg.accessMode != EFFECT_BUFFER_ACCESS_WRITE &&
             config->outputCfg.accessMode != EFFECT_BUFFER_ACCESS_ACCUMULATE) return -EINVAL;
     if (config->inputCfg.format != AUDIO_FORMAT_PCM_16_BIT) return -EINVAL;
@@ -894,9 +896,13 @@ int visualizer_command(effect_context_t * context, uint32_t cmdCode, uint32_t cm
     case VISUALIZER_CMD_MEASURE: {
         if (pReplyData == NULL || replySize == NULL ||
                 *replySize < (sizeof(int32_t) * MEASUREMENT_COUNT)) {
-            ALOGV("%s VISUALIZER_CMD_MEASURE error *replySize %d <"
-                    "(sizeof(int32_t) * MEASUREMENT_COUNT) %d",
-                    __func__, *replySize, sizeof(int32_t) * MEASUREMENT_COUNT);
+            if (replySize == NULL) {
+                ALOGV("%s VISUALIZER_CMD_MEASURE error replySize NULL", __func__);
+            } else {
+                ALOGV("%s VISUALIZER_CMD_MEASURE error *replySize %u <"
+                        "(sizeof(int32_t) * MEASUREMENT_COUNT) %zu",
+                        __func__, *replySize, sizeof(int32_t) * MEASUREMENT_COUNT);
+            }
             android_errorWriteLog(0x534e4554, "30229821");
             return -EINVAL;
         }

@@ -1975,8 +1975,7 @@
     </path>
 
     <path name="handset-mic-sbc">
-        <path name="adc5" />
-        <ctl name="ADC5 Volume" value="12" />
+        <path name="dmic3" />
     </path>
 
     <path name="three-mic">
@@ -2277,6 +2276,9 @@
     </path>
 
     <path name="capture-fm">
+    </path>
+
+    <path name="aanc-path">
     </path>
 
     <path name="aanc-handset-mic">

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -39,6 +39,11 @@
 #include "platform.h"
 #include "platform_api.h"
 
+#ifdef DYNAMIC_LOG_ENABLED
+#include <log_xml_parser.h>
+#define LOG_MASK HAL_MOD_FILE_HW_INFO
+#include <log_utils.h>
+#endif
 
 struct hardware_info {
     char name[HW_INFO_ARRAY_MAX_SIZE];
@@ -47,6 +52,7 @@ struct hardware_info {
     uint32_t num_snd_devices;
     char dev_extn[HW_INFO_ARRAY_MAX_SIZE];
     snd_device_t  *snd_devices;
+    bool is_stereo_spkr;
 };
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -135,6 +141,10 @@ static const snd_device_t tasha_DB_variant_devices[] = {
     SND_DEVICE_OUT_SPEAKER
 };
 
+static const snd_device_t tasha_sbc_variant_devices[] = {
+    SND_DEVICE_IN_HANDSET_MIC
+};
+
 static const snd_device_t taiko_apq8084_sbc_variant_devices[] = {
     SND_DEVICE_IN_HANDSET_MIC,
     SND_DEVICE_IN_SPEAKER_MIC,
@@ -200,6 +210,10 @@ static const snd_device_t tasha_liquid_variant_devices[] = {
     SND_DEVICE_IN_SPEAKER_STEREO_DMIC,
 };
 
+static const snd_device_t tavil_qrd_variant_devices[] = {
+    SND_DEVICE_OUT_SPEAKER
+};
+
 static void  update_hardware_info_8084(struct hardware_info *hw_info, const char *snd_card_name)
 {
     if (!strcmp(snd_card_name, "apq8084-taiko-mtp-snd-card") ||
@@ -241,6 +255,20 @@ static void  update_hardware_info_8084(struct hardware_info *hw_info, const char
         strlcpy(hw_info->dev_extn, "-sbc", sizeof(hw_info->dev_extn));
     } else {
         ALOGW("%s: Not an 8084 device", __func__);
+    }
+}
+
+static void  update_hardware_info_8096(struct hardware_info *hw_info, const char *snd_card_name)
+{
+    if (!strcmp(snd_card_name, "apq8096-tasha-i2c-snd-card")) {
+        ALOGW("%s: Updating hardware info for APQ 8096", __func__);
+        strlcpy(hw_info->type, "mtp", sizeof(hw_info->type));
+        strlcpy(hw_info->name, "apq8096", sizeof(hw_info->name));
+        hw_info->snd_devices = NULL;
+        hw_info->num_snd_devices = 0;
+        strlcpy(hw_info->dev_extn, "", sizeof(hw_info->dev_extn));
+    } else {
+        ALOGW("%s: Not an 8096 device", __func__);
     }
 }
 
@@ -301,33 +329,58 @@ static void  update_hardware_info_8996(struct hardware_info *hw_info, const char
         hw_info->snd_devices = (snd_device_t *)tasha_DB_variant_devices;
         hw_info->num_snd_devices = ARRAY_SIZE(tasha_DB_variant_devices);
         strlcpy(hw_info->dev_extn, "-db", sizeof(hw_info->dev_extn));
+    } else if (!strcmp(snd_card_name, "msm8996-tasha-sbc-snd-card")) {
+        strlcpy(hw_info->type, " sbc", sizeof(hw_info->type));
+        strlcpy(hw_info->name, "msm8996", sizeof(hw_info->name));
+        hw_info->snd_devices = (snd_device_t *)tasha_sbc_variant_devices;
+        hw_info->num_snd_devices = ARRAY_SIZE(tasha_sbc_variant_devices);
+        strlcpy(hw_info->dev_extn, "-sbc", sizeof(hw_info->dev_extn));
     } else {
         ALOGW("%s: Not a 8996 device", __func__);
     }
 }
 
-static void  update_hardware_info_msmcobalt(struct hardware_info *hw_info, const char *snd_card_name)
+static void  update_hardware_info_msm8998(struct hardware_info *hw_info, const char *snd_card_name)
 {
-    if (!strcmp(snd_card_name, "msmcobalt-tasha-fluid-snd-card")) {
+    if (!strcmp(snd_card_name, "msm8998-tasha-fluid-snd-card")) {
         strlcpy(hw_info->type, " fluid", sizeof(hw_info->type));
-        strlcpy(hw_info->name, "msmcobalt", sizeof(hw_info->name));
+        strlcpy(hw_info->name, "msm8998", sizeof(hw_info->name));
         hw_info->snd_devices = (snd_device_t *)tasha_fluid_variant_devices;
         hw_info->num_snd_devices = ARRAY_SIZE(tasha_fluid_variant_devices);
+        hw_info->is_stereo_spkr = false;
         strlcpy(hw_info->dev_extn, "-fluid", sizeof(hw_info->dev_extn));
-    } else if (!strcmp(snd_card_name, "msmcobalt-tasha-liquid-snd-card")) {
+    } else if (!strcmp(snd_card_name, "msm8998-tasha-liquid-snd-card")) {
         strlcpy(hw_info->type, " liquid", sizeof(hw_info->type));
-        strlcpy(hw_info->name, "msmcobalt", sizeof(hw_info->name));
+        strlcpy(hw_info->name, "msm8998", sizeof(hw_info->name));
         hw_info->snd_devices = (snd_device_t *)tasha_liquid_variant_devices;
         hw_info->num_snd_devices = ARRAY_SIZE(tasha_liquid_variant_devices);
         strlcpy(hw_info->dev_extn, "-liquid", sizeof(hw_info->dev_extn));
-    } else if (!strcmp(snd_card_name, "msmcobalt-tasha-db-snd-card")) {
+    } else if (!strcmp(snd_card_name, "msm8998-tasha-db-snd-card")) {
         strlcpy(hw_info->type, " dragon-board", sizeof(hw_info->type));
-        strlcpy(hw_info->name, "msmcobalt", sizeof(hw_info->name));
+        strlcpy(hw_info->name, "msm8998", sizeof(hw_info->name));
         hw_info->snd_devices = (snd_device_t *)tasha_DB_variant_devices;
         hw_info->num_snd_devices = ARRAY_SIZE(tasha_DB_variant_devices);
         strlcpy(hw_info->dev_extn, "-db", sizeof(hw_info->dev_extn));
+    } else if (!strcmp(snd_card_name, "msm8998-qvr-tavil-snd-card")) {
+        hw_info->is_stereo_spkr = false;
+    } else if (!strcmp(snd_card_name, "msm8998-skuk-tavil-snd-card")) {
+        hw_info->is_stereo_spkr = false;
     } else {
-        ALOGW("%s: Not a msmcobalt device", __func__);
+        ALOGW("%s: Not a msm8998 device", __func__);
+    }
+}
+
+static void  update_hardware_info_sdm845(struct hardware_info *hw_info, const char *snd_card_name)
+{
+    if (!strcmp(snd_card_name, "sdm845-tavil-qrd-snd-card")) {
+        strlcpy(hw_info->type, " qrd", sizeof(hw_info->type));
+        strlcpy(hw_info->name, "sdm845", sizeof(hw_info->name));
+        hw_info->snd_devices = (snd_device_t *)tavil_qrd_variant_devices;
+        hw_info->num_snd_devices = ARRAY_SIZE(tavil_qrd_variant_devices);
+        hw_info->is_stereo_spkr = false;
+        strlcpy(hw_info->dev_extn, "-qrd", sizeof(hw_info->dev_extn));
+    } else {
+        ALOGW("%s: Not a sdm845 device", __func__);
     }
 }
 
@@ -424,6 +477,17 @@ static void update_hardware_info_8226(struct hardware_info *hw_info, const char 
     }
 }
 
+static void update_hardware_info_bear(struct hardware_info *hw_info, const char *snd_card_name)
+{
+    if (!strcmp(snd_card_name, "sdm660-snd-card")) {
+        strlcpy(hw_info->name, "sdm660", sizeof(hw_info->name));
+    } else if (!strcmp(snd_card_name, "sdm660-tavil-snd-card")) {
+        strlcpy(hw_info->name, "sdm660", sizeof(hw_info->name));
+    } else {
+        ALOGW("%s: Not an SDM device", __func__);
+    }
+}
+
 void *hw_info_init(const char *snd_card_name)
 {
     struct hardware_info *hw_info;
@@ -436,6 +500,7 @@ void *hw_info_init(const char *snd_card_name)
 
     hw_info->snd_devices = NULL;
     hw_info->num_snd_devices = 0;
+    hw_info->is_stereo_spkr = true;
     strlcpy(hw_info->dev_extn, "", sizeof(hw_info->dev_extn));
     strlcpy(hw_info->type, "", sizeof(hw_info->type));
     strlcpy(hw_info->name, "", sizeof(hw_info->name));
@@ -456,12 +521,21 @@ void *hw_info_init(const char *snd_card_name)
     } else if(strstr(snd_card_name, "msm8994")) {
         ALOGV("8994 - variant soundcard");
         update_hardware_info_8994(hw_info, snd_card_name);
+    } else if(strstr(snd_card_name, "apq8096")) {
+        ALOGV("8096 - variant soundcard");
+        update_hardware_info_8096(hw_info, snd_card_name);
     } else if(strstr(snd_card_name, "msm8996")) {
         ALOGV("8996 - variant soundcard");
         update_hardware_info_8996(hw_info, snd_card_name);
-    } else if(strstr(snd_card_name, "msmcobalt")) {
-        ALOGV("MSMCOBALT - variant soundcard");
-        update_hardware_info_msmcobalt(hw_info, snd_card_name);
+    } else if((strstr(snd_card_name, "msm8998")) || (strstr(snd_card_name, "apq8098_latv"))) {
+        ALOGV("MSM8998 - variant soundcard");
+        update_hardware_info_msm8998(hw_info, snd_card_name);
+    } else if(strstr(snd_card_name, "sdm845")) {
+        ALOGV("SDM845 - variant soundcard");
+        update_hardware_info_sdm845(hw_info, snd_card_name);
+    } else if (strstr(snd_card_name, "sdm660")) {
+        ALOGV("Bear - variant soundcard");
+        update_hardware_info_bear(hw_info, snd_card_name);
     } else {
         ALOGE("%s: Unsupported target %s:",__func__, snd_card_name);
         free(hw_info);
@@ -500,4 +574,11 @@ void hw_info_append_hw_type(void *hw_info, snd_device_t snd_device,
         }
     }
     ALOGD("%s : device_name = %s", __func__,device_name);
+}
+
+bool hw_info_is_stereo_spkr(void *hw_info)
+{
+    struct hardware_info *my_data = (struct hardware_info*) hw_info;
+
+    return my_data->is_stereo_spkr;
 }

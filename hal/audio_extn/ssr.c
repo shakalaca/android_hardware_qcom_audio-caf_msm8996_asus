@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  * Not a Contribution.
  *
  * Copyright (C) 2013 The Android Open Source Project
@@ -36,18 +36,12 @@
 #include "audio_extn.h"
 #include "platform.h"
 #include "platform_api.h"
-#ifndef _OSS
 #include "surround_rec_interface.h"
-#else
-typedef struct {
-    const char *name;
-    char *(*get_param_fn)(void *h);
-} get_param_data_t;
 
-typedef struct {
-    const char *name;
-    void (*set_param_fn)(void *h, const char *val);
-} set_param_data_t;
+#ifdef DYNAMIC_LOG_ENABLED
+#include <log_xml_parser.h>
+#define LOG_MASK HAL_MOD_FILE_SSR
+#include <log_utils.h>
 #endif
 
 #ifdef SSR_ENABLED
@@ -203,9 +197,9 @@ static int32_t drc_init_lib(int num_chan, int sample_rate __unused)
 
     /* TO DO: different config files for different sample rates */
     if (num_chan == 6) {
-        cfgFileName = "/system/etc/drc/drc_cfg_5.1.txt";
+        cfgFileName = "/vendor/etc/drc/drc_cfg_5.1.txt";
     } else if (num_chan == 2) {
-        cfgFileName = "/system/etc/drc/drc_cfg_AZ.txt";
+        cfgFileName = "/vendor/etc/drc/drc_cfg_AZ.txt";
     }
 
     ALOGV("%s: Calling drc_init: num ch: %d, period: %d, cfg file: %s", __func__, num_chan, SSR_PERIOD_SIZE, cfgFileName);
@@ -284,9 +278,9 @@ static int32_t ssr_init_surround_sound_3mic_lib(unsigned long buffersize, int nu
     ssrmod.num_out_chan = num_out_chan;
 
     if (num_out_chan == 6) {
-        cfgFileName = "/system/etc/surround_sound_3mic/surround_sound_rec_5.1.cfg";
+        cfgFileName = "/vendor/etc/surround_sound_3mic/surround_sound_rec_5.1.cfg";
     } else if (num_out_chan == 2) {
-        cfgFileName = "/system/etc/surround_sound_3mic/surround_sound_rec_AZ.cfg";
+        cfgFileName = "/vendor/etc/surround_sound_3mic/surround_sound_rec_AZ.cfg";
     } else {
         ALOGE("%s: No cfg file for num_out_chan: %d", __func__, num_out_chan);
     }
@@ -323,7 +317,7 @@ void audio_extn_ssr_update_enabled()
 {
     char ssr_enabled[PROPERTY_VALUE_MAX] = "false";
 
-    property_get("ro.qc.sdk.audio.ssr",ssr_enabled,"0");
+    property_get("ro.vendor.audio.sdk.ssr",ssr_enabled,"0");
     if (!strncmp("true", ssr_enabled, 4)) {
         ALOGD("%s: surround sound recording is supported", __func__);
         ssrmod.is_ssr_enabled = true;
@@ -343,33 +337,55 @@ bool audio_extn_ssr_get_enabled()
     return false;
 }
 
-int audio_extn_ssr_check_and_set_usecase(struct stream_in *in)
-{
-    int ret = -1;
+bool  audio_extn_ssr_check_usecase(struct stream_in *in) {
+    int ret = false;
     int channel_count = audio_channel_count_from_in_mask(in->channel_mask);
     audio_devices_t devices = in->device;
     audio_source_t source = in->source;
 
-    /* validate input params
-     * only stereo and 5:1 channel config is supported
-     * only AUDIO_DEVICE_IN_BUILTIN_MIC, AUDIO_DEVICE_IN_BACK_MIC supports 3 mics */
-    if (audio_extn_ssr_get_enabled() &&
-           ((channel_count == 2) || (channel_count == 6)) &&
-           ((AUDIO_SOURCE_MIC == source) || (AUDIO_SOURCE_CAMCORDER == source)) &&
-           ((AUDIO_DEVICE_IN_BUILTIN_MIC == devices) || (AUDIO_DEVICE_IN_BACK_MIC == devices)) &&
-           (in->format == AUDIO_FORMAT_PCM_16_BIT)) {
-
-        ALOGD("%s: Found SSR use case starting SSR lib with channel_count :%d",
+    if ((audio_extn_ssr_get_enabled()) &&
+            ((channel_count == 2) || (channel_count == 6)) &&
+            ((AUDIO_SOURCE_MIC == source) || (AUDIO_SOURCE_CAMCORDER == source)) &&
+            ((AUDIO_DEVICE_IN_BUILTIN_MIC == devices) || (AUDIO_DEVICE_IN_BACK_MIC == devices)) &&
+            (in->format == AUDIO_FORMAT_PCM_16_BIT)) {
+        ALOGD("%s: SSR enabled with channel_count :%d",
                       __func__, channel_count);
+        ret = true;
+    }
+    return ret;
+}
 
-        if (!audio_extn_ssr_init(in, channel_count)) {
-            ALOGD("%s: Created SSR session succesfully", __func__);
+int audio_extn_ssr_set_usecase(struct stream_in *in,
+                               struct audio_config *config,
+                               bool *update_params)
+{
+    int ret = -EINVAL;
+    int channel_count = audio_channel_count_from_in_mask(in->channel_mask);
+    audio_channel_representation_t representation =
+                  audio_channel_mask_get_representation(in->channel_mask);
+    *update_params = false;
+
+    if (audio_extn_ssr_check_usecase(in)) {
+
+        if (representation == AUDIO_CHANNEL_REPRESENTATION_INDEX) {
+            /* update params in case channel representation index.
+             * on returning error, flinger will retry with supported representation passed
+             */
+            ALOGD("%s: SSR supports only channel representation position, channel_mask(%#x)"
+                              ,__func__, config->channel_mask);
+            config->channel_mask = AUDIO_CHANNEL_IN_6;
             ret = 0;
+            *update_params = true;
         } else {
-            ALOGE("%s: Unable to start SSR record session", __func__);
+            if (!audio_extn_ssr_init(in, channel_count)) {
+                ALOGD("%s: Created SSR session succesfully", __func__);
+                ret = 0;
+            } else {
+                ALOGE("%s: Unable to start SSR record session", __func__);
+            }
         }
-   }
-   return ret;
+    }
+    return ret;
 }
 
 static void pcm_buffer_queue_push(struct pcm_buffer_queue **queue,
@@ -530,22 +546,22 @@ int32_t audio_extn_ssr_init(struct stream_in *in, int num_out_chan)
 
     pthread_mutex_unlock(&ssrmod.ssr_process_lock);
 
-    property_get("ssr.pcmdump",c_multi_ch_dump,"0");
+    property_get("vendor.audio.ssr.pcmdump",c_multi_ch_dump,"0");
     if (0 == strncmp("true", c_multi_ch_dump, sizeof("ssr.dump-pcm"))) {
         /* Remember to change file system permission of data(e.g. chmod 777 data/),
           otherwise, fopen may fail */
         if ( !ssrmod.fp_input) {
             ALOGD("%s: Opening ssr input dump file \n", __func__);
-            ssrmod.fp_input = fopen("/data/misc/audio/ssr_input_3ch.pcm", "wb");
+            ssrmod.fp_input = fopen("/data/vendor/misc/audio/ssr_input_3ch.pcm", "wb");
         }
 
         if ( !ssrmod.fp_output) {
             if(ssrmod.num_out_chan == 6) {
                 ALOGD("%s: Opening ssr input dump file for 6 channel\n", __func__);
-                ssrmod.fp_output = fopen("/data/misc/audio/ssr_output_6ch.pcm", "wb");
+                ssrmod.fp_output = fopen("/data/vendor/misc/audio/ssr_output_6ch.pcm", "wb");
             } else {
                 ALOGD("%s: Opening ssr input dump file for 2 channel\n", __func__);
-                ssrmod.fp_output = fopen("/data/misc/audio/ssr_output_2ch.pcm", "wb");
+                ssrmod.fp_output = fopen("/data/vendor/misc/audio/ssr_output_2ch.pcm", "wb");
             }
         }
 
